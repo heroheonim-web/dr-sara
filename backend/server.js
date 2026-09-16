@@ -10,10 +10,10 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
-
+ 
 const app = express();
 const PORT = process.env.PORT || 5000;
-
+ 
 // ===================================
 // Required secrets — fail fast instead of silently falling back
 // ===================================
@@ -24,7 +24,7 @@ if (missing.length) {
     process.exit(1);
 }
 const JWT_SECRET = process.env.JWT_SECRET;
-
+ 
 // ===================================
 // Supabase Storage (product/blog images) — replaces local disk uploads,
 // اللي كان بينمسح مع كل إعادة نشر على Render (قرص مؤقت).
@@ -34,7 +34,7 @@ const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'uploads';
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
 });
-
+ 
 /**
  * يرفع ملف واحد (من multer memoryStorage) إلى Supabase Storage
  * ويرجع الرابط العام الكامل (https://xxxx.supabase.co/storage/v1/object/public/...).
@@ -49,12 +49,12 @@ async function uploadToSupabase(file, folder = 'misc') {
     const { data } = supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(key);
     return data.publicUrl;
 }
-
+ 
 /** يرفع مجموعة ملفات بالتوازي، يرجع مصفوفة روابط بنفس الترتيب. */
 async function uploadManyToSupabase(files = [], folder = 'misc') {
     return Promise.all(files.map((f) => uploadToSupabase(f, folder)));
 }
-
+ 
 // ===================================
 // Database Connection (SSL for Render / Supabase / managed Postgres)
 // ===================================
@@ -87,16 +87,16 @@ if (process.env.DATABASE_URL) {
         ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     };
 }
-
+ 
 const pool = new Pool(poolConfig);
-
+ 
 pool.on('error', (err) => {
     // Errors on idle clients must not crash the whole process
     console.error('❌ Unexpected database error on idle client:', err.message);
 });
-
+ 
 let dbReady = false;
-
+ 
 async function startServer() {
     try {
         const client = await pool.connect();
@@ -108,27 +108,27 @@ async function startServer() {
         // Fail the deploy loudly instead of serving traffic against a dead pool
         process.exit(1);
     }
-
+ 
     app.listen(PORT, () => {
         console.log(`🚀 Dr. Sara Backend running on port ${PORT}`);
     });
 }
-
+ 
 // ===================================
 // Middleware
 // ===================================
 // Render/Cloudflare يضعان proxy أمام التطبيق — ضروري ليعمل req.ip بشكل صحيح
 app.set('trust proxy', 1);
-
+ 
 const allowedOrigins = (process.env.FRONTEND_URL || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-
+ 
 if (allowedOrigins.length === 0) {
     console.warn('⚠️  FRONTEND_URL is not set — all origins will be allowed (development mode only).');
 }
-
+ 
 app.use(cors({
     origin: (origin, cb) => {
         // طلبات بدون Origin (curl, health checks, webhooks) مسموحة
@@ -139,7 +139,7 @@ app.use(cors({
     },
     credentials: true,
 }));
-
+ 
 // رؤوس أمان أساسية بدون مكتبات إضافية
 app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -148,7 +148,7 @@ app.use((req, res, next) => {
     res.setHeader('X-XSS-Protection', '0');
     next();
 });
-
+ 
 // Capture raw body alongside JSON parsing so the Moyasar webhook can verify
 // the HMAC signature (signature is computed over the exact raw bytes).
 app.use(express.json({
@@ -156,7 +156,7 @@ app.use(express.json({
     verify: (req, res, buf) => { req.rawBody = buf; },
 }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
-
+ 
 // Readiness gate — reject requests until the DB pool is confirmed live
 app.use((req, res, next) => {
     if (!dbReady && req.path !== '/health') {
@@ -164,9 +164,9 @@ app.use((req, res, next) => {
     }
     next();
 });
-
+ 
 app.get('/health', (req, res) => res.json({ status: 'ok', db: dbReady, timestamp: new Date() }));
-
+ 
 // File Upload — check both mimetype and extension (mimetype alone is client-controlled)
 // memoryStorage: الملف بيضل بالـ RAM كـ buffer لحد ما نرفعه لـ Supabase Storage،
 // ما بينكتب على قرص السيرفر (قرص Render مؤقت وبينمسح مع كل إعادة نشر).
@@ -182,7 +182,7 @@ const upload = multer({
         cb(new Error('Images only (jpeg, png, gif, webp)'));
     },
 });
-
+ 
 // ===================================
 // Helpers
 // ===================================
@@ -191,7 +191,7 @@ function safeId(val) {
     const n = Number.parseInt(val, 10);
     return Number.isInteger(n) && n > 0 ? n : null;
 }
-
+ 
 // Rate limiter بسيط في الذاكرة (بدون مكتبات خارجية)
 const rateBuckets = new Map();
 function rateLimit({ windowMs, max, keyPrefix = '' }) {
@@ -217,13 +217,13 @@ setInterval(() => {
     const now = Date.now();
     for (const [k, v] of rateBuckets) if (now > v.resetAt) rateBuckets.delete(k);
 }, 10 * 60 * 1000).unref();
-
+ 
 function safeInt(val, def, lo = 1, hi = 1000) {
     const n = parseInt(val, 10);
     if (!Number.isFinite(n) || Number.isNaN(n)) return def;
     return Math.min(Math.max(n, lo), hi);
 }
-
+ 
 // ===================================
 // Auth Middleware
 // ===================================
@@ -236,14 +236,14 @@ const authenticateToken = (req, res, next) => {
         next();
     });
 };
-
+ 
 const requireRole = (...roles) => (req, res, next) => {
     if (!req.admin || !roles.includes(req.admin.role)) {
         return res.status(403).json({ error: 'Forbidden' });
     }
     next();
 };
-
+ 
 // ===================================
 // AUTH ROUTES
 // ===================================
@@ -252,18 +252,20 @@ const loginLimiter = rateLimit({
     max: parseInt(process.env.LOGIN_RATE_LIMIT, 10) || 10,
     keyPrefix: 'login',
 });
-
+ 
+const publicWriteLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 20, keyPrefix: 'public' });
+ 
 app.post('/api/admin/login', loginLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
         if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
-
+ 
         const result = await pool.query('SELECT * FROM admins WHERE email=$1 AND is_active=true', [email]);
         if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
-
+ 
         const admin = result.rows[0];
         if (!await bcrypt.compare(password, admin.password_hash)) return res.status(401).json({ error: 'Invalid credentials' });
-
+ 
         const token = jwt.sign(
             { id: admin.id, email: admin.email, role: admin.role, full_name: admin.full_name },
             JWT_SECRET,
@@ -275,7 +277,7 @@ app.post('/api/admin/login', loginLimiter, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.get('/api/admin/me', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query('SELECT id, email, full_name, role FROM admins WHERE id=$1', [req.admin.id]);
@@ -285,7 +287,7 @@ app.get('/api/admin/me', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 // ===================================
 // CATEGORIES ROUTES
 // ===================================
@@ -297,7 +299,7 @@ app.get('/api/categories', async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.post('/api/admin/categories', authenticateToken, async (req, res) => {
     try {
         const { name_ar, name_en, description } = req.body;
@@ -311,7 +313,7 @@ app.post('/api/admin/categories', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.put('/api/admin/categories/:id', authenticateToken, async (req, res) => {
     try {
         const { name_ar, name_en, description, is_active } = req.body;
@@ -325,7 +327,7 @@ app.put('/api/admin/categories/:id', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.delete('/api/admin/categories/:id', authenticateToken, async (req, res) => {
     try {
         await pool.query('UPDATE categories SET is_active=false WHERE id=$1', [req.params.id]);
@@ -334,7 +336,7 @@ app.delete('/api/admin/categories/:id', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 // ===================================
 // PRODUCTS ROUTES
 // ===================================
@@ -347,26 +349,26 @@ app.get('/api/products', async (req, res) => {
         let conditions = ['1=1'];
         const params = [];
         let pc = 1;
-
+ 
         if (category) { conditions.push(`p.category_id=$${pc++}`); params.push(category); }
         if (status) { conditions.push(`p.status=$${pc++}`); params.push(status); }
         if (featured === 'true') conditions.push('p.is_featured=true');
         if (search) { conditions.push(`(p.name_ar ILIKE $${pc} OR p.short_description ILIKE $${pc})`); params.push(`%${search}%`); pc++; }
-
+ 
         const where = 'WHERE ' + conditions.join(' AND ');
         const result = await pool.query(
             `SELECT p.*, c.name_ar as category_name FROM products p LEFT JOIN categories c ON p.category_id=c.id ${where} ORDER BY p.is_featured DESC, p.created_at DESC LIMIT $${pc} OFFSET $${pc + 1}`,
             [...params, limit, offset]
         );
         const countResult = await pool.query(`SELECT COUNT(*) FROM products p ${where}`, params);
-
+ 
         res.json({ products: result.rows, total: parseInt(countResult.rows[0].count), page, totalPages: Math.ceil(countResult.rows[0].count / limit) });
     } catch (error) {
         console.error('Get products error:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.get('/api/products/:id', async (req, res) => {
     try {
         const id = safeId(req.params.id);
@@ -381,15 +383,15 @@ app.get('/api/products/:id', async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.post('/api/admin/products', authenticateToken, upload.array('images', 5), async (req, res) => {
     try {
         const { category_id, name_ar, name_en, price, sale_price, short_description, description, stock_quantity, sku, track_inventory, is_featured, is_digital, status } = req.body;
         if (!name_ar || !price) return res.status(400).json({ error: 'Name and price are required' });
-
+ 
         const images = req.files?.length ? await uploadManyToSupabase(req.files, 'products') : [];
         const finalSku = sku || 'SKU-' + Date.now();
-
+ 
         const result = await pool.query(
             `INSERT INTO products (category_id,name_ar,name_en,price,sale_price,short_description,description,stock_quantity,sku,track_inventory,is_featured,is_digital,status,images)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
@@ -411,14 +413,14 @@ app.post('/api/admin/products', authenticateToken, upload.array('images', 5), as
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.put('/api/admin/products/:id', authenticateToken, upload.array('images', 5), async (req, res) => {
     try {
         const { category_id, name_ar, name_en, price, sale_price, short_description, description, stock_quantity, sku, track_inventory, is_featured, is_digital, status, existing_images } = req.body;
         let images = [];
         try { images = existing_images ? JSON.parse(existing_images) : []; } catch { images = []; }
         if (req.files?.length) images = [...images, ...(await uploadManyToSupabase(req.files, 'products'))];
-
+ 
         const result = await pool.query(
             `UPDATE products SET category_id=$1,name_ar=$2,name_en=$3,price=$4,sale_price=$5,short_description=$6,description=$7,stock_quantity=$8,sku=$9,track_inventory=$10,is_featured=$11,is_digital=$12,status=$13,images=$14,updated_at=NOW() WHERE id=$15 RETURNING *`,
             [category_id || null, name_ar, name_en || null, parseFloat(price), sale_price ? parseFloat(sale_price) : null, short_description || null, description || null, parseInt(stock_quantity) || 0, sku, track_inventory !== 'false', is_featured === 'true' || is_featured === true, is_digital === 'true' || is_digital === true, status || 'published', JSON.stringify(images), req.params.id]
@@ -430,7 +432,7 @@ app.put('/api/admin/products/:id', authenticateToken, upload.array('images', 5),
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.delete('/api/admin/products/:id', authenticateToken, requireRole('admin', 'super_admin'), async (req, res) => {
     try {
         const product = await pool.query('SELECT name_ar FROM products WHERE id=$1', [req.params.id]);
@@ -441,7 +443,7 @@ app.delete('/api/admin/products/:id', authenticateToken, requireRole('admin', 's
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 // ===================================
 // ORDERS ROUTES
 // ===================================
@@ -463,7 +465,7 @@ app.get('/api/admin/orders', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.get('/api/admin/orders/:id', authenticateToken, async (req, res) => {
     try {
         const order = await pool.query('SELECT * FROM orders WHERE id=$1', [req.params.id]);
@@ -474,7 +476,7 @@ app.get('/api/admin/orders/:id', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.patch('/api/admin/orders/:id/status', authenticateToken, async (req, res) => {
     try {
         const { status, tracking_number } = req.body;
@@ -490,7 +492,7 @@ app.patch('/api/admin/orders/:id/status', authenticateToken, async (req, res) =>
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 // Order creation — stock is decremented atomically per-item so two
 // concurrent checkouts can never both succeed on the last unit.
 app.post('/api/orders', async (req, res) => {
@@ -502,11 +504,11 @@ app.post('/api/orders', async (req, res) => {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'Customer info and items required' });
         }
-
+ 
         const products = await client.query('SELECT * FROM products WHERE id = ANY($1)', [items.map(i => i.product_id)]);
         const productMap = {};
         products.rows.forEach(p => productMap[p.id] = p);
-
+ 
         let subtotal = 0;
         for (const item of items) {
             const product = productMap[item.product_id];
@@ -514,12 +516,12 @@ app.post('/api/orders', async (req, res) => {
             if (!item.quantity || item.quantity <= 0) throw new Error(`Invalid quantity for product: ${item.product_id}`);
             subtotal += (product.sale_price || product.price) * item.quantity;
         }
-
+ 
         const shippingMethod = shipping?.method_id ? await client.query('SELECT * FROM shipping_methods WHERE id=$1', [shipping.method_id]) : { rows: [] };
         const sm = shippingMethod.rows[0];
         let shippingCost = sm?.price || 0;
         if (sm?.free_shipping_threshold && subtotal >= sm.free_shipping_threshold) shippingCost = 0;
-
+ 
         let discount = 0;
         let coupon = null;
         if (coupon_code) {
@@ -532,11 +534,11 @@ app.post('/api/orders', async (req, res) => {
                 coupon = null;
             }
         }
-
+ 
         const tax = (subtotal - discount) * 0.15;
         const total = subtotal + shippingCost - discount + tax;
         const orderNumber = 'ORD-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
-
+ 
         let customerId;
         const existing = await client.query('SELECT id FROM customers WHERE email=$1', [customer.email]);
         if (existing.rows.length) {
@@ -549,17 +551,17 @@ app.post('/api/orders', async (req, res) => {
             );
             customerId = nc.rows[0].id;
         }
-
+ 
         const order = await client.query(
             `INSERT INTO orders (order_number,customer_id,customer_email,customer_phone,customer_name,shipping_address,subtotal,shipping_cost,tax,discount,total,coupon_code,status,payment_method,shipping_method,payment_status)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',$13,$14,'pending') RETURNING *`,
             [orderNumber, customerId, customer.email, customer.phone, `${customer.first_name} ${customer.last_name}`, JSON.stringify(shipping?.address || {}), subtotal, shippingCost, tax, discount, total, coupon_code || null, payment_method, sm?.name_ar || 'standard']
         );
-
+ 
         for (const item of items) {
             const p = productMap[item.product_id];
             const price = p.sale_price || p.price;
-
+ 
             // Atomic, race-safe stock decrement: only succeeds if enough stock remains.
             if (p.track_inventory) {
                 const stockUpdate = await client.query(
@@ -570,13 +572,13 @@ app.post('/api/orders', async (req, res) => {
                     throw new Error(`الكمية غير متوفرة: ${p.name_ar}`);
                 }
             }
-
+ 
             await client.query(
                 `INSERT INTO order_items (order_id,product_id,product_name,product_sku,product_image,price,quantity,subtotal) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
                 [order.rows[0].id, item.product_id, p.name_ar, p.sku, p.images?.[0] || null, price, item.quantity, price * item.quantity]
             );
         }
-
+ 
         await client.query('COMMIT');
         res.status(201).json({ order_id: order.rows[0].id, order_number: orderNumber, total, subtotal, shipping_cost: shippingCost, tax, discount, status: 'pending' });
     } catch (error) {
@@ -587,7 +589,7 @@ app.post('/api/orders', async (req, res) => {
         client.release();
     }
 });
-
+ 
 app.get('/api/orders/public/:id', async (req, res) => {
     try {
         const result = await pool.query('SELECT id,order_number,total,payment_status,status,shipping_method,created_at FROM orders WHERE id=$1', [req.params.id]);
@@ -595,7 +597,7 @@ app.get('/api/orders/public/:id', async (req, res) => {
         res.json(result.rows[0]);
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 app.post('/api/coupons/validate', async (req, res) => {
     try {
         const { code, amount } = req.body;
@@ -607,7 +609,7 @@ app.post('/api/coupons/validate', async (req, res) => {
         res.json({ valid: true, discount: Math.min(discount, amount), code: coupon.code });
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 // ===================================
 // SHIPPING ROUTES
 // ===================================
@@ -617,7 +619,7 @@ app.get('/api/shipping/methods', async (req, res) => {
         res.json(result.rows);
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 app.post('/api/shipping/calculate', async (req, res) => {
     try {
         const { shipping_method_id } = req.body;
@@ -627,7 +629,7 @@ app.post('/api/shipping/calculate', async (req, res) => {
         res.json({ method: m.name_ar, cost: m.price, estimated_days: `${m.estimated_days_min}-${m.estimated_days_max} أيام عمل`, free_shipping_threshold: m.free_shipping_threshold, currency: 'SAR' });
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 app.get('/api/shipping/track/:tracking_number', async (req, res) => {
     try {
         const order = await pool.query('SELECT order_number,shipping_company,tracking_number,status,shipped_at FROM orders WHERE tracking_number=$1', [req.params.tracking_number]);
@@ -635,7 +637,7 @@ app.get('/api/shipping/track/:tracking_number', async (req, res) => {
         res.json(order.rows[0]);
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 // ===================================
 // BOOKINGS ROUTES
 // ===================================
@@ -643,7 +645,7 @@ app.post('/api/bookings', publicWriteLimiter, async (req, res) => {
     try {
         const { first_name, last_name, email, phone, session_type, date, time_slot, consultation_topic, notes } = req.body;
         if (!first_name || !email || !session_type || !date || !time_slot) return res.status(400).json({ error: 'Required fields missing' });
-
+ 
         const bookingRef = 'BK-' + Date.now();
         let customerId;
         const existing = await pool.query('SELECT id FROM customers WHERE email=$1', [email]);
@@ -655,7 +657,7 @@ app.post('/api/bookings', publicWriteLimiter, async (req, res) => {
             );
             customerId = nc.rows[0].id;
         }
-
+ 
         await pool.query(`INSERT INTO bookings (booking_ref,customer_id,customer_name,customer_email,customer_phone,session_type,booking_date,time_slot,consultation_topic,notes,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending')`,
             [bookingRef, customerId, `${first_name} ${last_name}`, email, phone, session_type, date, time_slot, consultation_topic || null, notes || null]);
         res.status(201).json({ booking_ref: bookingRef, status: 'pending' });
@@ -664,7 +666,7 @@ app.post('/api/bookings', publicWriteLimiter, async (req, res) => {
         res.status(500).json({ error: 'فشل حفظ الحجز' });
     }
 });
-
+ 
 app.get('/api/admin/bookings', authenticateToken, async (req, res) => {
     try {
         const { status } = req.query;
@@ -681,7 +683,7 @@ app.get('/api/admin/bookings', authenticateToken, async (req, res) => {
         res.json({ bookings: result.rows, total: parseInt(count.rows[0].count) });
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 app.patch('/api/admin/bookings/:id/status', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query('UPDATE bookings SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [req.body.status, req.params.id]);
@@ -689,12 +691,10 @@ app.patch('/api/admin/bookings/:id/status', authenticateToken, async (req, res) 
         res.json(result.rows[0]);
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 // ===================================
 // CONTACT MESSAGES
 // ===================================
-const publicWriteLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 20, keyPrefix: 'public' });
-
 app.post('/api/contact', publicWriteLimiter, async (req, res) => {
     try {
         const { name, email, phone, subject, message } = req.body;
@@ -703,21 +703,21 @@ app.post('/api/contact', publicWriteLimiter, async (req, res) => {
         res.json({ success: true });
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 app.get('/api/admin/messages', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT 100');
         res.json(result.rows);
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 app.patch('/api/admin/messages/:id/read', authenticateToken, async (req, res) => {
     try {
         await pool.query('UPDATE contact_messages SET is_read=true WHERE id=$1', [req.params.id]);
         res.json({ success: true });
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 // ===================================
 // BLOG ROUTES
 // ===================================
@@ -727,7 +727,7 @@ app.get('/api/blog', async (req, res) => {
         res.json(result.rows);
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 app.post('/api/admin/blog', authenticateToken, upload.single('image'), async (req, res) => {
     try {
         const { title_ar, excerpt_ar, content_ar, category, status } = req.body;
@@ -741,7 +741,7 @@ app.post('/api/admin/blog', authenticateToken, upload.single('image'), async (re
         res.status(201).json(result.rows[0]);
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 app.put('/api/admin/blog/:id', authenticateToken, upload.single('image'), async (req, res) => {
     try {
         const { title_ar, excerpt_ar, content_ar, category, status } = req.body;
@@ -760,14 +760,14 @@ app.put('/api/admin/blog/:id', authenticateToken, upload.single('image'), async 
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.delete('/api/admin/blog/:id', authenticateToken, async (req, res) => {
     try {
         await pool.query('DELETE FROM blog_posts WHERE id=$1', [req.params.id]);
         res.json({ success: true });
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 // ===================================
 // DASHBOARD STATS
 // ===================================
@@ -800,7 +800,7 @@ app.get('/api/admin/stats', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 // alias متوافق مع النسخ القديمة من الفرونت إند — نفس بيانات /api/admin/stats
 app.get('/api/admin/dashboard/stats', authenticateToken, async (req, res) => {
     try {
@@ -827,7 +827,7 @@ app.get('/api/admin/dashboard/stats', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+ 
 app.get('/api/admin/customers', authenticateToken, async (req, res) => {
     try {
         const page = safeInt(req.query.page, 1);
@@ -838,14 +838,14 @@ app.get('/api/admin/customers', authenticateToken, async (req, res) => {
         res.json({ customers: result.rows, total: parseInt(count.rows[0].count) });
     } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
-
+ 
 // ===================================
 // PAYMENT ROUTES (Moyasar)
 // ===================================
 function moyasarConfigured() {
     return process.env.MOYASAR_API_KEY && !process.env.MOYASAR_API_KEY.includes('YOUR_KEY');
 }
-
+ 
 app.post('/api/payments/create', async (req, res) => {
     try {
         if (!moyasarConfigured()) {
@@ -853,7 +853,7 @@ app.post('/api/payments/create', async (req, res) => {
         }
         const { amount, currency = 'SAR', description, callback_url, metadata } = req.body;
         if (!amount || amount <= 0) return res.status(400).json({ error: 'Invalid amount' });
-
+ 
         const response = await axios.post(
             'https://api.moyasar.com/v1/payments',
             {
@@ -872,11 +872,11 @@ app.post('/api/payments/create', async (req, res) => {
         res.status(500).json({ error: 'فشل إنشاء جلسة الدفع' });
     }
 });
-
+ 
 app.get('/api/payments/verify/:payment_id', async (req, res) => {
     try {
         if (!moyasarConfigured()) return res.status(503).json({ error: 'Payment gateway not configured' });
-
+ 
         const response = await axios.get(
             `https://api.moyasar.com/v1/payments/${req.params.payment_id}`,
             { auth: { username: process.env.MOYASAR_API_KEY, password: '' } }
@@ -894,7 +894,7 @@ app.get('/api/payments/verify/:payment_id', async (req, res) => {
         res.status(500).json({ error: 'فشل التحقق من الدفع' });
     }
 });
-
+ 
 // Webhook — signature is REQUIRED. Without MOYASAR_WEBHOOK_SECRET set,
 // anyone could POST a forged "payment.paid" event and mark any order paid.
 app.post('/api/payments/webhook', async (req, res) => {
@@ -904,19 +904,19 @@ app.post('/api/payments/webhook', async (req, res) => {
             console.error('❌ MOYASAR_WEBHOOK_SECRET not set — rejecting webhook');
             return res.status(500).json({ error: 'Webhook not configured' });
         }
-
+ 
         const signature = req.headers['x-moyasar-signature'] || req.headers['x-webhook-signature'];
         if (!signature || !req.rawBody) {
             return res.status(401).json({ error: 'Missing signature' });
         }
-
+ 
         const expected = crypto.createHmac('sha256', webhookSecret).update(req.rawBody).digest('hex');
         const sigBuf = Buffer.from(signature);
         const expBuf = Buffer.from(expected);
         if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
             return res.status(401).json({ error: 'Invalid signature' });
         }
-
+ 
         const { type, data } = req.body;
         if (type === 'payment.paid' && data?.metadata?.order_id) {
             await pool.query(
@@ -930,7 +930,7 @@ app.post('/api/payments/webhook', async (req, res) => {
         res.status(500).json({ error: 'Webhook failed' });
     }
 });
-
+ 
 // ===================================
 // Error Handlers
 // ===================================
@@ -939,9 +939,9 @@ app.use((err, req, res, next) => {
     if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large. Max 5MB.' });
     res.status(500).json({ error: 'Internal server error' });
 });
-
+ 
 app.use((req, res) => res.status(404).json({ error: `Route not found: ${req.method} ${req.path}` }));
-
+ 
 // ===================================
 // Start
 // ===================================
