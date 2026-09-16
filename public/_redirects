@@ -1,7 +1,0 @@
-# Cloudflare Pages _redirects
-# /api/* بينحل عبر functions/api/[[path]].js (Pages Function) — مش هون،
-# لأن Cloudflare ما بيقدر يعمل proxy لدومين خارجي بملف _redirects.
-#
-# هاد السطر بس للـ SPA fallback: أي مسار غير موجود كملف فعلي يرجع index.html
-# (عشان React Router يشتغل على /login, /admin, ...الخ بعد refresh).
-/*  /index.html  200
