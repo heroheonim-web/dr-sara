@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { API_BASE } from '@/lib/apiClient';
+import { API_BASE, safeJson } from '@/lib/apiClient';
 
 const OrderSuccessPage = () => {
   const [searchParams] = useSearchParams();
@@ -28,7 +28,7 @@ const OrderSuccessPage = () => {
       // 2) ثم اجلب تفاصيل الطلب المحدثة
       try {
         const res = await fetch(`${API_URL}/orders/public/${orderId}`);
-        const data = await res.json();
+        const data = await safeJson(res);
         if (!cancelled && res.ok) setOrder(data);
       } catch (e) {
         console.error(e);
