@@ -47,6 +47,24 @@ export const clearSession = () => {
 };
 
 /**
+ * قراءة آمنة لرد السيرفر بدل res.json() المباشرة.
+ * لو الرد فاضي أو غير صالح (مثلاً السيرفر كان لسا عم يشتغل بعد نوم Render)،
+ * بترجع رسالة عربية مفهومة بدل ما يطلع خطأ متصفح تقني غامض.
+ */
+export async function safeJson(res) {
+  const text = await res.text();
+  if (!text) {
+    if (res.ok) return null;
+    throw new Error('السيرفر لم يرد — قد يكون بدأ التشغيل للتو، حاول مرة أخرى خلال ثوانٍ');
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('استجابة غير متوقعة من السيرفر، حاول مرة أخرى خلال ثوانٍ');
+  }
+}
+
+/**
  * fetch موحّد: يضيف التوكن، يبني الرابط، ويرمي خطأ مفهوم عند الفشل.
  * @param {string} path مسار بعد /api مثل '/admin/products'
  */
