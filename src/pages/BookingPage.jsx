@@ -6,7 +6,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { API_BASE } from '@/lib/apiClient';
+import { API_BASE, safeJson } from '@/lib/apiClient';
 
 const timeSlots = ['09:00 ص', '10:00 ص', '11:00 ص', '12:00 م', '02:00 م', '03:00 م', '04:00 م', '05:00 م'];
 
@@ -43,12 +43,12 @@ const BookingPage = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (res.ok) {
         setBookingRef(data.booking_ref);
         setBookingSuccess(true);
       } else {
-        throw new Error(data.error);
+        throw new Error(data?.error || 'فشل إرسال الحجز');
       }
     } catch (err) {
       toast({ title: 'حدث خطأ', description: err.message, variant: 'destructive' });
