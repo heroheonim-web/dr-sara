@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ShoppingCart, Calendar, Users, Package, Mail, TrendingUp, AlertTriangle } from 'lucide-react';
-import { API_BASE } from '@/lib/apiClient';
+import { API_BASE, safeJson } from '@/lib/apiClient';
 
 const API = `${API_BASE}/admin`;
 const token = () => localStorage.getItem('admin_token');
@@ -27,7 +27,7 @@ const AdminHome = () => {
 
   useEffect(() => {
     fetch(`${API}/stats`, { headers: { Authorization: `Bearer ${token()}` } })
-      .then(r => r.json())
+      .then(r => safeJson(r))
       .then(data => { setStats(data); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
