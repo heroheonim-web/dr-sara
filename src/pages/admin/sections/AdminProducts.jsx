@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Search, X, Upload } from 'lucide-react';
-import { API_BASE, mediaUrl, PLACEHOLDER_IMG } from '@/lib/apiClient';
+import { API_BASE, mediaUrl, PLACEHOLDER_IMG, safeJson } from '@/lib/apiClient';
 
 const API = API_BASE;
 const authH = () => ({ Authorization: `Bearer ${localStorage.getItem('admin_token')}` });
@@ -21,8 +21,8 @@ const AdminProducts = () => {
   const load = async () => {
     setLoading(true);
     const [p, c] = await Promise.all([
-      fetch(`${API}/products?limit=100`, { headers: authH() }).then(r => r.json()),
-      fetch(`${API}/categories`, { headers: authH() }).then(r => r.json()),
+      fetch(`${API}/products?limit=100`, { headers: authH() }).then(r => safeJson(r)),
+      fetch(`${API}/categories`, { headers: authH() }).then(r => safeJson(r)),
     ]);
     setProducts(p.products || []);
     setCategories(c);
