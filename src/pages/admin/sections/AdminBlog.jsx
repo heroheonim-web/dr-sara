@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Eye, EyeOff, X, Upload } from 'lucide-react';
-import { API_BASE, mediaUrl, PLACEHOLDER_IMG } from '@/lib/apiClient';
+import { API_BASE, mediaUrl, PLACEHOLDER_IMG, safeJson } from '@/lib/apiClient';
 
 const API = API_BASE;
 const authH = () => ({ Authorization: `Bearer ${localStorage.getItem('admin_token')}` });
@@ -21,7 +21,7 @@ const AdminBlog = () => {
     // Admin sees all posts including drafts
     const res = await fetch(`${API}/blog`, { headers: authH() });
     // Fallback to empty if no posts yet
-    const data = await res.json().catch(() => []);
+    const data = await safeJson(res).catch(() => []);
     setPosts(Array.isArray(data) ? data : []);
     setLoading(false);
   };
@@ -53,7 +53,7 @@ const AdminBlog = () => {
       const method = editing ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: authH(), body: fd });
       if (res.ok) { setModal(false); load(); }
-      else { const err = await res.json(); alert(err.error || 'خطأ في الحفظ'); }
+      else { const err = await safeJson(res).catch(() => null); alert(err?.error || 'خطأ في الحفظ'); }
     } catch { alert('خطأ في الاتصال'); }
     finally { setSaving(false); }
   };
