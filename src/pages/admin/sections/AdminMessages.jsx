@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, MailOpen, X } from 'lucide-react';
-import { API_BASE } from '@/lib/apiClient';
+import { API_BASE, safeJson } from '@/lib/apiClient';
 
 const API = `${API_BASE}/admin`;
 const authH = () => ({ Authorization: `Bearer ${localStorage.getItem('admin_token')}` });
@@ -13,7 +13,7 @@ const AdminMessages = () => {
   const load = async () => {
     setLoading(true);
     const res = await fetch(`${API}/messages`, { headers: authH() });
-    const data = await res.json();
+    const data = await safeJson(res);
     setMessages(data);
     setLoading(false);
   };
