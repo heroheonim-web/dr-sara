@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
-import { API_BASE } from '@/lib/apiClient';
+import { API_BASE, safeJson } from '@/lib/apiClient';
 
 const API = `${API_BASE}/admin`;
 const authH = () => ({ Authorization: `Bearer ${localStorage.getItem('admin_token')}` });
@@ -24,7 +24,7 @@ const AdminBookings = () => {
     const params = new URLSearchParams({ limit: 50 });
     if (filterStatus) params.append('status', filterStatus);
     const res = await fetch(`${API}/bookings?${params}`, { headers: authH() });
-    const data = await res.json();
+    const data = await safeJson(res);
     setBookings(data.bookings || []);
     setLoading(false);
   };
