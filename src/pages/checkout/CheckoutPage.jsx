@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useCart } from '@/contexts/CartContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { API_BASE, mediaUrl, PLACEHOLDER_IMG } from '@/lib/apiClient';
+import { API_BASE, mediaUrl, PLACEHOLDER_IMG, safeJson } from '@/lib/apiClient';
 
 // ======= Moyasar Payment Widget =======
 const MoyasarForm = ({ amount, orderId, onSuccess, onFail }) => {
@@ -98,7 +98,7 @@ const CheckoutPage = () => {
   // جلب طرق الشحن
   useEffect(() => {
     fetch(`${API_URL}/shipping/methods`)
-      .then(r => r.json())
+      .then(r => safeJson(r))
       .then(data => {
         setShippingMethods(data);
         if (data.length > 0) {
@@ -128,7 +128,7 @@ const CheckoutPage = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: couponCode, amount: getTotal() })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (data.discount) {
         setCouponDiscount(data.discount);
       } else {
@@ -173,7 +173,7 @@ const CheckoutPage = () => {
           coupon_code: couponCode || undefined,
         })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (data.order_id) {
         setOrderId(data.order_id);
         setStep(3);
