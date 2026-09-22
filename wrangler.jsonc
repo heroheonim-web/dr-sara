@@ -3,6 +3,9 @@
   "name": "dr-sara",
   "compatibility_date": "2026-09-01",
   "main": "worker.js",
+  "vars": {
+    "BACKEND_URL": "https://dr-sara.onrender.com"
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
