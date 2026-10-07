@@ -243,6 +243,18 @@ const requireRole = (...roles) => (req, res, next) => {
     }
     next();
 };
+
+// يتحقق من توكن عميل حقيقي (مش أدمن) - يُستخدم لمسارات /api/customer/*
+const authenticateCustomer = (req, res, next) => {
+    const token = req.headers['authorization']?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+        if (err) return res.status(403).json({ error: 'Invalid or expired token' });
+        if (decoded.role !== 'customer') return res.status(403).json({ error: 'Forbidden' });
+        req.customer = decoded;
+        next();
+    });
+};
  
 // ===================================
 // AUTH ROUTES
@@ -285,6 +297,187 @@ app.get('/api/admin/me', authenticateToken, async (req, res) => {
         res.json(result.rows[0]);
     } catch (error) {
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ===================================
+// CUSTOMER AUTH (تسجيل دخول/حساب موحّد مع الأدمن تحت /api/auth/*)
+// ===================================
+app.post('/api/auth/register', publicWriteLimiter, async (req, res) => {
+    try {
+        const { email, password, full_name } = req.body;
+        if (!email || !password || !full_name) return res.status(400).json({ error: 'كل الحقول مطلوبة' });
+        if (password.length < 6) return res.status(400).json({ error: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' });
+
+        const existing = await pool.query('SELECT id FROM customers WHERE email=$1', [email]);
+        if (existing.rows.length) return res.status(409).json({ error: 'البريد الإلكتروني مستخدم بالفعل' });
+
+        const [first_name, ...rest] = full_name.trim().split(' ');
+        const last_name = rest.join(' ') || first_name;
+        const password_hash = await bcrypt.hash(password, 10);
+
+        const result = await pool.query(
+            `INSERT INTO customers (email, first_name, last_name, password_hash)
+             VALUES ($1,$2,$3,$4) RETURNING id, email, first_name, last_name`,
+            [email, first_name, last_name, password_hash]
+        );
+        const customer = result.rows[0];
+        const full = `${customer.first_name} ${customer.last_name}`;
+        const token = jwt.sign(
+            { id: customer.id, email: customer.email, role: 'customer', full_name: full },
+            JWT_SECRET, { expiresIn: '7d' }
+        );
+        res.json({ token, admin: { id: customer.id, email: customer.email, full_name: full, role: 'customer' } });
+    } catch (error) {
+        console.error('Register error:', error);
+        res.status(500).json({ error: 'خطأ في السيرفر' });
+    }
+});
+
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) return res.status(400).json({ error: 'البريد وكلمة المرور مطلوبان' });
+
+        // أولاً: تحقق كأدمن
+        const adminRes = await pool.query('SELECT * FROM admins WHERE email=$1 AND is_active=true', [email]);
+        if (adminRes.rows.length) {
+            const admin = adminRes.rows[0];
+            if (!await bcrypt.compare(password, admin.password_hash)) return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
+            const token = jwt.sign(
+                { id: admin.id, email: admin.email, role: admin.role, full_name: admin.full_name },
+                JWT_SECRET, { expiresIn: '24h' }
+            );
+            return res.json({ token, admin: { id: admin.id, email: admin.email, full_name: admin.full_name, role: admin.role } });
+        }
+
+        // ثانياً: تحقق كعميل
+        const custRes = await pool.query('SELECT * FROM customers WHERE email=$1', [email]);
+        if (!custRes.rows.length || !custRes.rows[0].password_hash) return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
+        const customer = custRes.rows[0];
+        if (!await bcrypt.compare(password, customer.password_hash)) return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
+
+        const full = `${customer.first_name} ${customer.last_name}`;
+        const token = jwt.sign({ id: customer.id, email: customer.email, role: 'customer', full_name: full }, JWT_SECRET, { expiresIn: '7d' });
+        res.json({ token, admin: { id: customer.id, email: customer.email, full_name: full, role: 'customer' } });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'خطأ في السيرفر' });
+    }
+});
+
+// ===================================
+// CUSTOMER DASHBOARD (بيانات حقيقية من الداتابيز)
+// ===================================
+app.get('/api/customer/dashboard', authenticateCustomer, async (req, res) => {
+    try {
+        const customerId = req.customer.id;
+        const [products, bookings, courses] = await Promise.all([
+            pool.query(
+                `SELECT COUNT(DISTINCT oi.product_id) AS v
+                 FROM order_items oi JOIN orders o ON o.id = oi.order_id
+                 WHERE o.customer_id = $1 AND o.payment_status = 'paid'`, [customerId]),
+            pool.query(
+                `SELECT COUNT(*) AS v FROM bookings
+                 WHERE customer_id = $1 AND booking_date >= CURRENT_DATE AND status != 'cancelled'`, [customerId]),
+            pool.query(`SELECT COUNT(*) AS v FROM enrollments WHERE customer_id=$1 AND status='active'`, [customerId]),
+        ]);
+        res.json({
+            purchased_products: parseInt(products.rows[0].v),
+            upcoming_sessions: parseInt(bookings.rows[0].v),
+            enrolled_courses: parseInt(courses.rows[0].v),
+        });
+    } catch (error) {
+        console.error('Customer dashboard error:', error);
+        res.status(500).json({ error: 'خطأ في السيرفر' });
+    }
+});
+
+app.get('/api/customer/courses', authenticateCustomer, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT c.* FROM courses c
+             JOIN enrollments e ON e.course_id = c.id
+             WHERE e.customer_id = $1 AND e.status = 'active'
+             ORDER BY e.enrolled_at DESC`, [req.customer.id]);
+        res.json(result.rows);
+    } catch (error) {
+        res.status(500).json({ error: 'خطأ في السيرفر' });
+    }
+});
+
+// ===================================
+// COURSES (عام + إدارة)
+// ===================================
+app.get('/api/courses', async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM courses WHERE status='published' ORDER BY created_at DESC");
+        res.json(result.rows);
+    } catch (error) {
+        res.status(500).json({ error: 'خطأ في السيرفر' });
+    }
+});
+
+app.post('/api/courses/:id/enroll', authenticateCustomer, async (req, res) => {
+    try {
+        await pool.query(
+            `INSERT INTO enrollments (customer_id, course_id) VALUES ($1,$2)
+             ON CONFLICT (customer_id, course_id) DO NOTHING`,
+            [req.customer.id, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'فشل التسجيل بالدورة' });
+    }
+});
+
+app.get('/api/admin/courses', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM courses ORDER BY created_at DESC');
+        res.json(result.rows);
+    } catch (error) {
+        res.status(500).json({ error: 'خطأ في السيرفر' });
+    }
+});
+
+app.post('/api/admin/courses', authenticateToken, upload.single('image'), async (req, res) => {
+    try {
+        const { title_ar, description_ar, price, duration, lessons_count, status } = req.body;
+        const image_url = req.file ? await uploadToSupabase(req.file, 'courses') : null;
+        const result = await pool.query(
+            `INSERT INTO courses (title_ar, description_ar, image_url, price, duration, lessons_count, status)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [title_ar, description_ar, image_url, price || 0, duration, lessons_count || 0, status || 'published']
+        );
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Create course error:', error);
+        res.status(500).json({ error: 'فشل إنشاء الدورة' });
+    }
+});
+
+app.put('/api/admin/courses/:id', authenticateToken, upload.single('image'), async (req, res) => {
+    try {
+        const { title_ar, description_ar, price, duration, lessons_count, status, existing_image } = req.body;
+        const image_url = req.file ? await uploadToSupabase(req.file, 'courses') : existing_image;
+        const result = await pool.query(
+            `UPDATE courses SET title_ar=$1, description_ar=$2, image_url=$3, price=$4, duration=$5, lessons_count=$6, status=$7, updated_at=NOW()
+             WHERE id=$8 RETURNING *`,
+            [title_ar, description_ar, image_url, price || 0, duration, lessons_count || 0, status || 'published', req.params.id]
+        );
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Update course error:', error);
+        res.status(500).json({ error: 'فشل تعديل الدورة' });
+    }
+});
+
+app.delete('/api/admin/courses/:id', authenticateToken, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM courses WHERE id=$1', [req.params.id]);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'فشل الحذف' });
     }
 });
  
